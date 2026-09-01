@@ -1,8 +1,8 @@
-build/
-build-*/
-out/
-cmake-build-*/
-dist/
+/build/
+/build-*/
+/out/
+/cmake-build-*/
+/dist/
 
 *.obj
 *.o

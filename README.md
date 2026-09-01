@@ -27,8 +27,13 @@ All buffers caller-owned.
 - **45 tests** across 4 suites, including the spec's worked example
   reproduced byte for byte.
 
-The card-side JavaCard applet already exists and moves into this
-repository in phase 2.
+The card side is here too: [`card/`](card/) holds the PKOC JavaCard
+applet — on-card P-256 key generation and the signing half of the
+exchange, with 8 jCardSim tests. Separate toolchain (Java, Ant, JDK 8),
+not part of the CMake build. See [`card/README.md`](card/README.md).
+
+So both ends of the protocol live in one repository: `card/` signs the
+transaction identifier, `pkoc/` verifies it and derives the credential.
 
 ## What PKOC is
 

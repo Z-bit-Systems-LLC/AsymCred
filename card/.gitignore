@@ -1,0 +1,7 @@
+build/*
+!build/pkoc.cap
+sdks/
+lib/*.jar
+*.exp
+*.jca
+*.class

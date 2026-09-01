@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PKOC JavaCard Applet Build File
+
+  Prerequisites:
+    1. Java JDK 8 (JavaCard SDK requires JDK 8)
+    2. Apache Ant
+    3. ant-javacard.jar in the lib/ directory (https://github.com/niccokunzmann/ant-javacard)
+    4. JavaCard SDK 3.0.4+ in the sdks/ directory
+
+  Build:
+    ant build
+
+  Clean:
+    ant clean
+
+  The output .cap file is placed in build/ and should be embedded as a resource
+  in the Cred-Bench Windows project for runtime deployment to blank cards.
+-->
+<project name="pkoc-applet" default="build" basedir=".">
+
+    <property name="src.dir" value="src"/>
+    <property name="test.dir" value="test"/>
+    <property name="build.dir" value="build"/>
+    <property name="build.classes" value="${build.dir}/classes"/>
+    <property name="build.test" value="${build.dir}/test-classes"/>
+    <property name="build.reports" value="${build.dir}/test-reports"/>
+    <property name="lib.dir" value="lib"/>
+    <property name="jckit.dir" value="sdks/jc304_kit"/>
+
+    <!-- Classpath for compilation and tests -->
+    <path id="javacard.classpath">
+        <fileset dir="${jckit.dir}/lib" includes="**/*.jar"/>
+    </path>
+
+    <path id="test.classpath">
+        <pathelement location="${build.classes}"/>
+        <pathelement location="${build.test}"/>
+        <fileset dir="${lib.dir}" includes="*.jar"/>
+        <path refid="javacard.classpath"/>
+    </path>
+
+    <!-- Path to ant-javacard task JAR -->
+    <taskdef name="javacard" classname="pro.javacard.ant.JavaCard" classpath="${lib.dir}/ant-javacard.jar"/>
+
+    <target name="build" description="Build the PKOC applet CAP file">
+        <mkdir dir="${build.dir}"/>
+
+        <javacard jckit="${jckit.dir}">
+            <cap output="${build.dir}/pkoc.cap"
+                 sources="${src.dir}"
+                 package="com.zbitsystems.pkoc"
+                 aid="A000000898000002"
+                 version="1.1">
+
+                <applet class="com.zbitsystems.pkoc.PkocApplet"
+                        aid="A000000898000001"/>
+            </cap>
+        </javacard>
+    </target>
+
+    <target name="compile-test" depends="build" description="Compile test classes">
+        <mkdir dir="${build.classes}"/>
+        <mkdir dir="${build.test}"/>
+
+        <!-- Compile applet source for test classpath -->
+        <javac srcdir="${src.dir}" destdir="${build.classes}"
+               source="1.8" target="1.8" includeantruntime="false">
+            <classpath refid="javacard.classpath"/>
+        </javac>
+
+        <!-- Compile tests -->
+        <javac srcdir="${test.dir}" destdir="${build.test}"
+               source="1.8" target="1.8" includeantruntime="false">
+            <classpath refid="test.classpath"/>
+        </javac>
+    </target>
+
+    <target name="test" depends="compile-test" description="Run jCardSim tests">
+        <mkdir dir="${build.reports}"/>
+        <junit printsummary="on" haltonfailure="yes" fork="yes">
+            <classpath refid="test.classpath"/>
+            <formatter type="plain" usefile="false"/>
+            <formatter type="xml"/>
+            <batchtest todir="${build.reports}">
+                <fileset dir="${build.test}" includes="**/*Test.class"/>
+            </batchtest>
+        </junit>
+    </target>
+
+    <target name="clean" description="Remove build artifacts">
+        <delete dir="${build.dir}"/>
+    </target>
+
+</project>

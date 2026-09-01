@@ -72,6 +72,9 @@ tests/
   vendor/unity/              # vendored Unity (MIT)
   test_tlv.c  test_apdu.c  test_pkoc.c  test_pkoc_credential.c
 
+card/                    # the card half: JavaCard applet, Ant, JDK 8.
+                         # Separate toolchain; not in the CMake build.
+
 docs/spec/               # gitignored; drop spec PDFs/text here
 ```
 
@@ -82,19 +85,43 @@ docs/spec/               # gitignored; drop spec PDFs/text here
 | `asymcred::core`  | TLV codec, APDU helpers                 | everything        |
 | `asymcred::pkoc`  | PKOC state machine + credential derive  | PKOC readers      |
 
-## Reserved for phase 2 — the card side
+## The card side — `card/`
 
-The user has an existing **PKOC JavaCard applet** (currently at
-`../Cred-Bench/src/Applet/`, `com.zbitsystems.pkoc.PkocApplet`) that is
-moving into this repository. It is already written and working; phase 2 is
-a relocation, not new development.
+The **PKOC JavaCard applet** (`com.zbitsystems.pkoc.PkocApplet`) lives in
+`card/`, copied from `../Cred-Bench/src/Applet/` on 2026-09-01. It was
+already written and working; this was a relocation, not new development.
+It builds and its 8 jCardSim tests pass from the new location.
 
-Reserve `card/` for it. Do not start writing a card-side applet — ask the
-user for the move rather than reimplementing what exists.
+Java, Ant, JDK 8 — a completely separate toolchain from the C library.
+See `card/README.md`. Not wired into the CMake build and should not be.
 
-Note the applet is Apache-2.0 in its current home, while this repo is
-GPL-3.0-or-later / commercial dual. Raise the license question with the
-user at move time rather than silently relicensing.
+Three things to know before touching it:
+
+- **`card/build/pkoc.cap` is committed on purpose.** `card/.gitignore`
+  ignores `build/` except that one file. Cred-Bench embeds that exact
+  artifact as a resource (`src/Core/Core.csproj`) to program blank cards
+  at runtime. CAP files embed build metadata, so a rebuild is not
+  byte-identical — do not overwrite it as a side effect of `ant build`.
+- **`sdks/` and `lib/*.jar` are git-ignored** and must be fetched on a
+  fresh checkout (the SDK clone alone is ~100 MB). `card/README.md` has
+  the commands. To build without copying them in, override the paths:
+  `ant -Djckit.dir=... -Dlib.dir=... test`.
+- **The license is unresolved.** Both Java files carry
+  `SPDX-License-Identifier: Apache-2.0` from their previous home; this
+  repo is GPL-3.0-or-later / commercial. The headers were deliberately
+  left as-is — relicensing is the copyright holder's decision, not a
+  consequence of a file move. Do not "fix" the headers to match the
+  repo's SPDX rule; that rule covers `.c` / `.h` / `CMakeLists.txt`.
+
+### Still in Cred-Bench
+
+The applet was **copied, not deleted**. `Cred-Bench/src/Core/Core.csproj`
+embeds `..\Applet\build\pkoc.cap`, so removing it there breaks that
+build. Retiring the Cred-Bench copy needs a decision from the user about
+how Cred-Bench should get the CAP afterwards (repoint the csproj across
+repositories, vendor the artifact, or a build step). Until then the two
+copies are byte-identical and can drift — if you change the applet here,
+say so.
 
 ## Reference material
 
