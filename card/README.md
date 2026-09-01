@@ -138,13 +138,23 @@ gp --list                     # verify
 Target hardware needs JavaCard 3.0.4+, ECC P-256, and NFC (ISO 14443-A).
 NXP JCOP4 or Infineon SLE97 series work.
 
-## License — unresolved
+## License — Apache-2.0
 
-The two files here carry `SPDX-License-Identifier: Apache-2.0` from their
-previous home in Cred-Bench. The rest of this repository is
-GPL-3.0-or-later or commercial (see [`../LICENSE.md`](../LICENSE.md)).
+This directory is **Apache-2.0**; full text in
+[LICENSE-APACHE-2.0.txt](LICENSE-APACHE-2.0.txt). The rest of the
+repository is GPL-3.0-or-later or commercial.
 
-The headers were left exactly as they were rather than relicensed as part
-of a file move. Which license this applet should carry here is a decision
-for the copyright holder, not a mechanical consequence of moving
-directories.
+That split is deliberate. PKOC is an open credential standard, and a card
+applet anyone can adopt — load onto cards, modify, ship in a proprietary
+product — without a licensing conversation is the point. No commercial
+license from Z-bit is needed for anything in `card/`.
+
+The two licenses cannot conflict here because the two components never
+combine into one work: the applet runs in the card's secure element, the
+reader library runs on the reader's MCU, they are never linked, and they
+talk only over the APDU wire protocol. See
+[Why the split works](../LICENSE.md#why-the-split-works).
+
+If you move code between `card/` and the rest of the tree, mind the
+direction: Apache-2.0 may be absorbed into GPL-3.0, but not the reverse.
+Update the SPDX header to match the new home.

@@ -106,12 +106,15 @@ Three things to know before touching it:
   fresh checkout (the SDK clone alone is ~100 MB). `card/README.md` has
   the commands. To build without copying them in, override the paths:
   `ant -Djckit.dir=... -Dlib.dir=... test`.
-- **The license is unresolved.** Both Java files carry
-  `SPDX-License-Identifier: Apache-2.0` from their previous home; this
-  repo is GPL-3.0-or-later / commercial. The headers were deliberately
-  left as-is — relicensing is the copyright holder's decision, not a
-  consequence of a file move. Do not "fix" the headers to match the
-  repo's SPDX rule; that rule covers `.c` / `.h` / `CMakeLists.txt`.
+- **`card/` is Apache-2.0 and stays that way** (decided 2026-09-01). The
+  rest of the repo is GPL-3.0-or-later / commercial. The mix is
+  intentional: PKOC is an open standard and broad adoption of the card
+  applet is the goal, while the value capture is in the reader library.
+  The two never link — different devices, no shared binary, arm's-length
+  APDU protocol — so no combined work is created and the licenses cannot
+  conflict. Full reasoning in `LICENSE.md`. Do not normalise the headers.
+  If code ever moves between the two halves, direction matters:
+  Apache-2.0 can be absorbed into GPL-3.0, not the reverse.
 
 ### Still in Cred-Bench
 
@@ -179,16 +182,24 @@ them:
 - No undefined behavior on invalid input. Decoders defend against
   truncated, oversized, and malformed data; they report errors, they do
   not crash.
-- **Every source file (`.c`, `.h`, `CMakeLists.txt`) starts with an SPDX
-  header**:
+- **Every source file starts with an SPDX header**, and the identifier
+  depends on which half of the repo it is in — the licensing is
+  deliberately mixed (see `LICENSE.md`):
 
   ```
-  // SPDX-License-Identifier: GPL-3.0-or-later
+  // SPDX-License-Identifier: GPL-3.0-or-later     <- core/ pkoc/ tests/
   // Copyright (C) 2026 Z-bit Systems, LLC
   ```
 
-  `#` comments for CMake, `//` for C. `LICENSE.md` is canonical; do not
-  write alternative license text into source files.
+  ```
+  // SPDX-License-Identifier: Apache-2.0           <- card/
+  // Copyright (c) Z-bit Systems, LLC
+  ```
+
+  `#` comments for CMake, `//` for C, `/* */` for Java. `LICENSE.md` is
+  canonical; do not write alternative license text into source files.
+  **Never "normalise" a `card/` header to GPL** — the Apache-2.0 there is
+  intentional, not leftover.
 
 ## Security rules specific to this library
 

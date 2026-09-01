@@ -178,6 +178,17 @@ implementation follows the PSIA **PKOC NFC Card Specification v1.1**
 
 ## License
 
-Dual-licensed: GPL-3.0-or-later, or a commercial license for proprietary
-and closed-source firmware. See [LICENSE.md](LICENSE.md) and
-[LICENSING](LICENSING).
+Two components, two licenses — by design:
+
+| Path | Runs on | License |
+| ---- | ------- | ------- |
+| `card/` | the card | Apache-2.0 |
+| `core/`, `pkoc/`, `tests/` | the reader | GPL-3.0-or-later **or** commercial |
+
+The applet is permissive so anyone can adopt it — PKOC is an open
+standard, and the card side should not need a licensing conversation. The
+reader library is where the commercial option applies.
+
+The two never link: different devices, no shared binary, communicating
+only over the APDU wire protocol. See [LICENSE.md](LICENSE.md) for the
+full reasoning and [LICENSING](LICENSING) for commercial inquiries.
