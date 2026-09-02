@@ -15,6 +15,7 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 option(ASYMCRED_BUILD_TESTS "Build unit tests" ON)
 option(ASYMCRED_SANITIZE    "Build with AddressSanitizer (and UBSan on GCC/Clang)" OFF)
+option(ASYMCRED_WERROR      "Treat compiler warnings as errors (CI gate)" OFF)
 
 # Strict warnings + per-function/data sections so consumers can use
 # --gc-sections to drop anything they do not reference.
@@ -37,6 +38,20 @@ else()
         -ffunction-sections
         -fdata-sections
     )
+endif()
+
+# Warnings-as-errors is a CI gate, not a build default. CI turns it on
+# (ci/build-c.yml, ci/cross-arm64.yml) so a new warning cannot land;
+# consumers building AsymCred inside their own tree keep warnings as
+# warnings, so a compiler version this project has never seen cannot
+# break their build over a diagnostic. The vendored Unity is insulated
+# separately in tests/CMakeLists.txt.
+if(ASYMCRED_WERROR)
+    if(MSVC)
+        add_compile_options(/WX)
+    else()
+        add_compile_options(-Werror)
+    endif()
 endif()
 
 if(ASYMCRED_SANITIZE)

@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Z-bit Systems, LLC
+
+# Sanitizer template — invoked from azure-pipelines.yml's `sanitize` job
+# on a self-hosted Default-pool Linux agent. Builds the same tree as
+# build-c.yml with AddressSanitizer + UndefinedBehaviorSanitizer
+# (ASYMCRED_SANITIZE=ON adds -fsanitize=address,undefined on GCC/Clang)
+# and runs the full ctest suite under them.
+#
+# Why this is a separate gate and not a flag on build_c: sanitizers
+# change the build, so they cannot share a build tree with the Release
+# job, and their value is orthogonal. AsymCred's decoders are required to
+# report errors rather than crash on truncated, oversized, and malformed
+# input (CLAUDE.md, "No undefined behavior on invalid input"). The
+# negative tests feed them exactly that — but a one-past-the-end read of
+# a caller-owned buffer usually *passes* silently without a sanitizer,
+# and no warning flag can see it. This job is what turns those tests into
+# evidence.
+#
+# Debug, not Release: the asan preset builds Debug so ASan reports carry
+# usable symbols and line numbers, and UBSan's checks are not optimised
+# away.
+#
+# halt_on_error=1 / abort_on_error=1 make the first finding fail the test
+# process, so ctest reports the test that tripped rather than continuing
+# past corrupted state. detect_leaks stays on (the default on Linux) —
+# the library allocates nothing, so any leak is in the test harness and
+# is worth knowing about.
+
+steps:
+  - bash: |
+      msg="${BUILD_SOURCEVERSIONMESSAGE:-}"
+      if [ "$(Build.SourceBranch)" = "refs/heads/main" ] && [ "${msg#Bump version to}" != "$msg" ]; then
+        echo "##vso[task.setvariable variable=skipRedundant]true"
+        echo "redundant release-bump build → skipping heavy steps"
+      else
+        echo "##vso[task.setvariable variable=skipRedundant]false"
+      fi
+    displayName: 'Detect redundant release-bump build'
+
+  - task: Bash@3
+    displayName: 'CMake configure (ASan + UBSan)'
+    condition: and(succeeded(), ne(variables['skipRedundant'], 'true'))
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        cmake -S . -B build-asan \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DASYMCRED_BUILD_TESTS=ON \
+          -DASYMCRED_SANITIZE=ON \
+          -DASYMCRED_WERROR=ON
+
+  - task: Bash@3
+    displayName: 'CMake build (ASan + UBSan)'
+    condition: and(succeeded(), ne(variables['skipRedundant'], 'true'))
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        cmake --build build-asan --parallel
+
+  # print_stacktrace + halt_on_error give a usable report on the first
+  # finding. UBSan defaults to printing and continuing, which would let a
+  # green ctest hide a diagnosed problem — hence the explicit
+  # halt_on_error for UBSAN_OPTIONS too.
+  - task: Bash@3
+    displayName: 'ctest (ASan + UBSan)'
+    condition: and(succeeded(), ne(variables['skipRedundant'], 'true'))
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        export ASAN_OPTIONS='abort_on_error=1:halt_on_error=1:detect_leaks=1:print_stacktrace=1'
+        export UBSAN_OPTIONS='print_stacktrace=1:halt_on_error=1'
+        ctest --test-dir build-asan --output-on-failure --output-junit ctest-asan-results.xml
+
+  - task: PublishTestResults@2
+    displayName: 'Publish test results (sanitizers)'
+    condition: and(succeededOrFailed(), ne(variables['skipRedundant'], 'true'))
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: '**/ctest-asan-results.xml'
+      searchFolder: '$(Build.SourcesDirectory)'
+      mergeTestResults: true
+      testRunTitle: 'AsymCred sanitizers (Debug)'

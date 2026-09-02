@@ -17,7 +17,8 @@
       "binaryDir": "${sourceDir}/build-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "ASYMCRED_BUILD_TESTS": "ON"
+        "ASYMCRED_BUILD_TESTS": "ON",
+        "ASYMCRED_WERROR": "ON"
       }
     },
     {
@@ -38,23 +39,43 @@
         "CMAKE_BUILD_TYPE": "Release",
         "ASYMCRED_BUILD_TESTS": "OFF"
       }
+    },
+    {
+      "name": "arm64",
+      "displayName": "Cross-compile aarch64 (build only)",
+      "binaryDir": "${sourceDir}/build-arm64",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/aarch64-linux-gnu.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ASYMCRED_BUILD_TESTS": "ON",
+        "ASYMCRED_WERROR": "ON"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "default", "configurePreset": "default" },
-    { "name": "release", "configurePreset": "release" },
-    { "name": "asan",    "configurePreset": "asan" },
-    { "name": "lib-only", "configurePreset": "lib-only" }
+    { "name": "default",  "configurePreset": "default",  "configuration": "Debug" },
+    { "name": "release",  "configurePreset": "release",  "configuration": "Release" },
+    { "name": "asan",     "configurePreset": "asan",     "configuration": "Debug" },
+    { "name": "lib-only", "configurePreset": "lib-only", "configuration": "Release" },
+    { "name": "arm64",    "configurePreset": "arm64",    "configuration": "Release" }
   ],
   "testPresets": [
     {
       "name": "default",
       "configurePreset": "default",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "configuration": "Release",
       "output": { "outputOnFailure": true }
     },
     {
       "name": "asan",
       "configurePreset": "asan",
+      "configuration": "Debug",
       "output": { "outputOnFailure": true }
     }
   ]

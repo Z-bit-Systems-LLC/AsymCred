@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Z-bit Systems, LLC
+
+# Cross-compile gate for 64-bit ARM Linux (aarch64-linux-gnu) — invoked
+# from azure-pipelines.yml's `cross_arm64` job on the self-hosted Default
+# pool (a Linux agent advertising the `aarch64Toolchain` capability).
+#
+# It is a *build-only* gate: it proves the library and its tests compile
+# and link for ARM64. It cannot run the resulting binaries — the agent is
+# x64. On-device execution would need a self-hosted Pi agent or QEMU;
+# deferred.
+#
+# Why an embedded credential library wants this. AsymCred is written for
+# reader hardware, not for the x86 workstation it is authored on, and
+# almost everything that separates portable C from accidentally-portable
+# C shows up as a compiler diagnostic on a different target: differing
+# alignment requirements (-Wcast-align is far noisier on ARM), a
+# different `char` signedness (plain `char` is unsigned on ARM, signed on
+# x86 — a real hazard in byte-oriented TLV and APDU code), and different
+# int/pointer widths. Compiling clean here is cheap standing evidence
+# that the "embedded-friendly, freestanding" claim in the README is more
+# than an aspiration.
+#
+# The GNU cross toolchain (gcc-aarch64-linux-gnu + binutils) is provided
+# by the agent image — NOT installed at runtime. A runtime `sudo apt-get`
+# hangs forever on a non-interactive agent without passwordless sudo,
+# which is what bit OSDP-Embedded. Provision the agent with:
+#   sudo apt-get install -y gcc-aarch64-linux-gnu
+# then add the user capability `aarch64Toolchain` to it. OSDP-Embedded's
+# scripts/provision-linux-agent.sh already does this, so an agent set up
+# for that repo needs nothing further for this one — AsymCred has no
+# external library dependencies, so there is no multiarch sysroot to
+# install.
+
+steps:
+  - bash: |
+      msg="${BUILD_SOURCEVERSIONMESSAGE:-}"
+      if [ "$(Build.SourceBranch)" = "refs/heads/main" ] && [ "${msg#Bump version to}" != "$msg" ]; then
+        echo "##vso[task.setvariable variable=skipRedundant]true"
+        echo "redundant release-bump build → skipping heavy steps"
+      else
+        echo "##vso[task.setvariable variable=skipRedundant]false"
+      fi
+    displayName: 'Detect redundant release-bump build'
+
+  - task: Bash@3
+    displayName: 'Cross toolchain version'
+    condition: and(succeeded(), ne(variables['skipRedundant'], 'true'))
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        aarch64-linux-gnu-gcc --version
+
+  # Tests are configured ON so the whole tree gets compiled for ARM, not
+  # just the two library targets — the test sources exercise the public
+  # headers, which is where a portability problem would surface.
+  - task: Bash@3
+    displayName: 'CMake configure (aarch64)'
+    condition: and(succeeded(), ne(variables['skipRedundant'], 'true'))
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        cmake -S . -B build-arm64 \
+          -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/aarch64-linux-gnu.cmake \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DASYMCRED_BUILD_TESTS=ON \
+          -DASYMCRED_WERROR=ON
+
+  - task: Bash@3
+    displayName: 'CMake build (aarch64)'
+    condition: and(succeeded(), ne(variables['skipRedundant'], 'true'))
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        cmake --build build-arm64 --parallel
+
+  # Assert the output is genuinely an aarch64 ELF. Without this, a
+  # toolchain file that silently failed to take effect (or a
+  # CMakeCache.txt left over from a host configure) would produce a
+  # green-but-worthless x86-64 build, and the gate would be proving
+  # nothing at all.
+  - task: Bash@3
+    displayName: 'Verify binaries are aarch64 ELF'
+    condition: and(succeeded(), ne(variables['skipRedundant'], 'true'))
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        bin=build-arm64/tests/test_pkoc
+        file "$bin"
+        if ! file "$bin" | grep -q 'ARM aarch64'; then
+          echo "##vso[task.logissue type=error]$bin is not an aarch64 binary"
+          exit 1
+        fi

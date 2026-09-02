@@ -450,16 +450,53 @@ Two limitations worth stating plainly:
   including the exact digest handed to verification — but proves nothing
   about any particular P-256 implementation. The spec's signature was
   verified independently with openssl to confirm the vector itself.
-- **Only MSVC has compiled this.** The build declares the strict GCC
-  warning set, but no GCC or Clang toolchain has exercised it yet.
+- **Compiler coverage is CI's job.** The library is authored under MSVC;
+  the GCC toolchains that exercise the strict warning set, the
+  sanitizers, and the ARM build all run in the pipeline rather than on
+  the author's workstation.
 
 The card-side applet has its own toolchain and its own 8 jCardSim tests —
 see [`card/README.md`](card/README.md).
+
+### Continuous integration
+
+Every push, PR, and `v*` tag runs three jobs on Z-bit's self-hosted Linux
+agents ([`ci/azure-pipelines.yml`](ci/azure-pipelines.yml)):
+
+| Job           | What it proves |
+| ------------- | -------------- |
+| `build_c`     | Compiles clean under GCC with the strict warning set as errors; all tests pass (x86_64 Release). |
+| `sanitize`    | The same suite passes under AddressSanitizer + UndefinedBehaviorSanitizer. |
+| `cross_arm64` | Library and tests compile and link for `aarch64-linux-gnu` (build-only). |
+
+The sanitizer job is what makes the negative tests mean something: a
+decoder that reads one byte past a caller-owned buffer normally *passes*
+its test, and no warning flag can see it. The cross-compile job is the
+standing evidence behind the "embedded-friendly" claim — different
+alignment rules and a different plain-`char` signedness are exactly what
+byte-oriented TLV and APDU code trips over.
+
+`ASYMCRED_WERROR` promotes warnings to errors and is set by CI only, so a
+new warning can never land here while your build of AsymCred is never
+broken by a diagnostic from a compiler we have not seen.
+
+### Pre-push checks
+
+```pwsh
+./scripts/Check-Code.ps1
+```
+
+Runs the same gates locally. On Windows the sanitizer and cross-compile
+gates report `SKIP` rather than quietly passing — see
+[`docs/RELEASING.md`](docs/RELEASING.md) for what a green local run does
+and does not tell you.
 
 ## Documentation
 
 - [`card/README.md`](card/README.md) — the JavaCard applet: build,
   jCardSim tests, loading onto physical cards
+- [`docs/RELEASING.md`](docs/RELEASING.md) — what CI checks, how to cut a
+  release, and where the version lives
 - [`CLAUDE.md`](CLAUDE.md) — architectural decisions, coding rules, and
   the specification details pinned down during implementation
 - [`LICENSE.md`](LICENSE.md) — the mixed-licensing rationale

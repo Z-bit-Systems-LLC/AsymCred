@@ -96,6 +96,11 @@ tests/
 card/                    # the card half: JavaCard applet, Ant, JDK 8.
                          # Separate toolchain; not in the CMake build.
 
+ci/                      # Azure Pipelines: entry point + one template
+                         # per job. See "CI and releases" below.
+cmake/toolchains/        # aarch64-linux-gnu.cmake (cross gate)
+scripts/                 # PowerShell release tooling
+docs/RELEASING.md        # what CI checks; how to cut a release
 docs/spec/               # gitignored; drop spec PDFs/text here
 ```
 
@@ -256,6 +261,57 @@ that opens doors it should not.
 - When adding a codec or message, add a round-trip test and at least one
   negative test (truncated, wrong length, malformed).
 
+## CI and releases
+
+Added 2026-09-02, modelled on OSDP-Embedded but deliberately smaller.
+Full detail in `docs/RELEASING.md`; the decisions worth not re-deriving:
+
+- **Azure Pipelines, self-hosted only.** `ci/azure-pipelines.yml` is the
+  entry point; the steps live in `build-c.yml` / `sanitize.yml` /
+  `cross-arm64.yml`. Every job runs on the **Default** pool's Linux
+  agents (the ones OSDP-Embedded provisions) — no Microsoft-hosted
+  agents, by the user's decision. That pool is shared with
+  OSDP-Embedded's jobs, so pushes to both repos queue rather than fan
+  out.
+- **Three jobs: gcc Release + ctest, ASan/UBSan + ctest, aarch64 cross
+  (build-only).** The sanitizer job is not redundant with the first: it
+  is what makes the decoders' negative tests evidence rather than
+  decoration, since a one-past-the-end read normally passes silently.
+  The cross job asserts the output is a real aarch64 ELF so a toolchain
+  file that failed to take effect can't produce a green x86 build.
+- **No Windows/MSVC job**, because the pool is Linux. MSVC coverage is
+  `scripts/Check-Code.ps1` on the workstation, which is where this
+  library is authored anyway.
+- **No `package` job, and releases publish no artifact.** AsymCred has
+  no crate and no binaries; a release is a green `v*` tag plus a GitHub
+  Release, and GitHub generates the source archives. This was the user's
+  explicit choice — do not add a packaging step without asking.
+- **`ASYMCRED_WERROR` (default OFF) is the CI-only warnings-as-errors
+  gate.** The strict warning set itself is always on. Keep it that way:
+  a consumer building AsymCred in their tree must never be broken by a
+  diagnostic from a compiler version we have not seen.
+- **The canonical version is `project(asymcred VERSION x.y.z)` in the
+  top-level CMakeLists.txt** — the only place in the repo carrying it.
+  `card/build.xml`'s `version="1.1"` is the applet's CAP package
+  version, a property of the PKOC standard, and must never be bumped by
+  release tooling.
+- **No pre-release versions.** CMake's `project()` VERSION rejects
+  `-rc.1` and there is no second manifest to hold it, so `Set-Version.ps1`
+  refuses them outright rather than recording a version that disagrees
+  with its tag. This is the one place the release flow is narrower than
+  OSDP-Embedded's.
+- **`card/` is not in CI.** Separate toolchain, ~100 MB gitignored SDK.
+  `ant test` stays a manual gate; the committed `card/build/pkoc.cap` is
+  never rebuilt as part of a release.
+- **Release flow**: `New-Release.ps1` (bump, verify, commit, tag, push)
+  → wait for the tag build → `Publish-GitHubRelease.ps1`. Nothing in it
+  is irreversible, so there is no approval-gated Release pipeline as
+  OSDP-Embedded has for crates.io. A failed tag build is fixed forward
+  with a new patch version; the tag is never moved.
+- The pipeline templates short-circuit the redundant `main` build of a
+  "Bump version to ..." commit (the tag build of the identical tree is
+  the one that gates the release). Same trick as OSDP-Embedded.
+
 ## Out of scope (do not introduce without explicit user approval)
 
 - Dynamic memory allocation, OS/RTOS calls, or I/O anywhere in `core/`
@@ -288,6 +344,11 @@ $cmake = "C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE
 MSBuild skips a rebuild when a restored file keeps an old timestamp —
 touch it (`(Get-Item path).LastWriteTime = Get-Date`) if a change seems
 not to take.
+
+`scripts/Check-Code.ps1` wraps all of this: it locates the VS toolchain
+with vswhere (so a plain PowerShell works — no Developer Prompt needed)
+and runs the CI gates. On Windows the sanitizer and cross-compile gates
+report `SKIP`, not `PASS`.
 
 ## When in doubt
 

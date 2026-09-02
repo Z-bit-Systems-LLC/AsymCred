@@ -1,0 +1,120 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Z-bit Systems, LLC
+
+# AsymCred — Azure DevOps pipeline.
+#
+# Layout matches Z-bit Systems' Azure DevOps CI guide
+# (https://github.com/Z-bit-Systems-LLC/Guidelines/blob/main/docs/azure-devops-ci-guide.md)
+# and OSDP-Embedded's pipeline: this file is the entry point that defines
+# triggers and orchestrates the jobs; the steps live in the build-c.yml /
+# sanitize.yml / cross-arm64.yml templates next to it.
+#
+# Trunk-based: every push to `main` (and every PR) runs all three jobs.
+# Tagging a commit `v*` (e.g. `v0.2.0` or `v0.2.0-rc.1`) runs the same
+# three — the tag is what makes the commit releasable, and a release is
+# only allowed to proceed from a green tag build.
+#
+# There is deliberately NO `package` job. Unlike OSDP-Embedded, AsymCred
+# ships no crate and no tool binaries: it is a source library that
+# consumers vendor or pull in with FetchContent, so a release is the tag
+# plus the GitHub Release notes, and GitHub generates the source archives
+# from the tag itself. See docs/RELEASING.md. If AsymCred ever grows a
+# packaged artifact, add a tag-gated `package` job here rather than
+# widening one of the build jobs.
+#
+# Pool. Every job runs on the self-hosted `Default` pool's Linux agents
+# (Proxmox LXC, provisioned by OSDP-Embedded's
+# scripts/provision-linux-agent.sh). Nothing here uses a Microsoft-hosted
+# agent.
+#
+# Parallelism / cost model. Azure DevOps bills *parallel jobs*, not
+# agents. These three jobs are independent and will run as wide as the
+# self-hosted parallel-job grants and the number of provisioned agents
+# allow; with a single self-hosted slot they simply serialize — still
+# correct, just not concurrent. Note the same pool carries
+# OSDP-Embedded's `build_rust` and `cross_arm64` jobs, so a push to both
+# repos at once queues rather than fans out.
+#
+# Test EXECUTION is x86_64 Linux only (build_c + sanitize). `cross_arm64`
+# is build-only — an x64 agent cannot run ARM binaries. Windows/MSVC is
+# not built here at all; it is covered locally by scripts/Check-Code.ps1
+# on a developer workstation.
+
+trigger:
+  branches:
+    include:
+      - main
+  tags:
+    include:
+      - v*
+
+# Default Pull-Request trigger so PRs run the same gates.
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  name: 'Default'
+  demands:
+    - Agent.OS -equals Linux
+
+variables:
+  buildConfiguration: 'Release'
+
+jobs:
+  # The primary gate: native x86_64 Linux compile with the strict GCC
+  # warning set, plus ctest execution. This is the job that first put a
+  # GCC front end on code the author develops under MSVC.
+  - job: build_c
+    displayName: 'Build & Test (gcc / Linux x86_64)'
+    pool:
+      name: 'Default'
+      demands:
+        - Agent.OS -equals Linux
+    steps:
+      - checkout: self
+        # The repo currently has no submodules (Unity is vendored in
+        # tree). Keeping `submodules: true` for forward compat — a no-op
+        # while .gitmodules doesn't exist.
+        submodules: true
+      - template: build-c.yml
+
+  # AddressSanitizer + UndefinedBehaviorSanitizer over the same test
+  # suite. This is not redundant with build_c: AsymCred's TLV and APDU
+  # decoders are explicitly required to survive truncated, oversized, and
+  # malformed input without undefined behavior (CLAUDE.md, "No undefined
+  # behavior on invalid input"), and the negative tests that feed them
+  # such input only *prove* that under a sanitizer. -Wconversion and
+  # friends cannot see a one-past-the-end read.
+  - job: sanitize
+    displayName: 'Sanitizers (ASan + UBSan / Linux x86_64)'
+    pool:
+      name: 'Default'
+      demands:
+        - Agent.OS -equals Linux
+    steps:
+      - checkout: self
+        submodules: true
+      - template: sanitize.yml
+
+  # Cross-compile gate for 64-bit ARM Linux. Build-only (see
+  # ci/cross-arm64.yml). AsymCred claims to be embedded-friendly; this is
+  # the cheapest standing evidence that the claim survives a compiler
+  # other than the host's, on a different word size and alignment regime.
+  #
+  # The `aarch64Toolchain` demand is the agent capability
+  # OSDP-Embedded's provision-linux-agent.sh sets once the GNU cross
+  # toolchain is installed. Demanding it means a half-provisioned agent
+  # leaves this job visibly queued instead of failing mid-build.
+  - job: cross_arm64
+    displayName: 'Cross-compile (aarch64)'
+    pool:
+      name: 'Default'
+      demands:
+        - Agent.OS -equals Linux
+        - aarch64Toolchain
+    steps:
+      - checkout: self
+        submodules: true
+      - template: cross-arm64.yml

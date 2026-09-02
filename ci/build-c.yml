@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Z-bit Systems, LLC
+
+# Native build/test template — invoked from azure-pipelines.yml's
+# `build_c` job on a self-hosted Default-pool Linux agent. Native x86_64
+# compile with the strict GCC warning set *and* ctest execution.
+#
+# See sanitize.yml for the ASan/UBSan pass over the same suite and
+# cross-arm64.yml for the ARM compile gate.
+#
+# The heavy steps skip themselves on the redundant branch-push run of a
+# release-bump commit: New-Release.ps1 pushes `main` and then the `v*`
+# tag, which queues two builds of an identical tree. The tag run is the
+# one that matters (it is the release gate), so the `refs/heads/main` run
+# of a "Bump version to ..." commit short-circuits. Same trick as
+# OSDP-Embedded's build-c.yml.
+
+steps:
+  - bash: |
+      msg="${BUILD_SOURCEVERSIONMESSAGE:-}"
+      if [ "$(Build.SourceBranch)" = "refs/heads/main" ] && [ "${msg#Bump version to}" != "$msg" ]; then
+        echo "##vso[task.setvariable variable=skipRedundant]true"
+        echo "redundant release-bump build → skipping heavy steps"
+      else
+        echo "##vso[task.setvariable variable=skipRedundant]false"
+      fi
+    displayName: 'Detect redundant release-bump build'
+
+  # Report the toolchain into the log. When a warning-set regression
+  # shows up months later, the first question is always "which gcc?".
+  - task: Bash@3
+    displayName: 'Toolchain versions'
+    condition: and(succeeded(), ne(variables['skipRedundant'], 'true'))
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        cmake --version
+        cc --version
+
+  # On Linux CMake defaults to the single-config "Unix Makefiles"
+  # generator, so the build type is fixed at configure time via
+  # CMAKE_BUILD_TYPE; there is no per-build `--config` (that is a
+  # multi-config / MSVC concept). Configured explicitly rather than via
+  # the `release` preset so the agent needs no CMake 3.21+ preset support
+  # and the exact flags are visible in this file.
+  #
+  # ASYMCRED_WERROR=ON is the CI half of the warning gate: the strict set
+  # (-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wcast-qual
+  # ...) is always on, and here a diagnostic fails the build. It defaults
+  # OFF so a consumer's build is never broken by a warning from a
+  # compiler version we have not seen. See CMakeLists.txt.
+  - task: Bash@3
+    displayName: 'CMake configure (Release, warnings = errors)'
+    condition: and(succeeded(), ne(variables['skipRedundant'], 'true'))
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        cmake -S . -B build \
+          -DCMAKE_BUILD_TYPE=$(buildConfiguration) \
+          -DASYMCRED_BUILD_TESTS=ON \
+          -DASYMCRED_WERROR=ON
+
+  # --parallel keeps all agent cores busy compiling.
+  - task: Bash@3
+    displayName: 'CMake build (Release)'
+    condition: and(succeeded(), ne(variables['skipRedundant'], 'true'))
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        cmake --build build --parallel
+
+  # --output-junit writes a JUnit XML report (CMake 3.21+) for the Tests
+  # tab.
+  - task: Bash@3
+    displayName: 'ctest (Release)'
+    condition: and(succeeded(), ne(variables['skipRedundant'], 'true'))
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        ctest --test-dir build --output-on-failure --output-junit ctest-results.xml
+
+  # succeededOrFailed() so results still publish when tests fail — that
+  # is the point — but skip on the redundant release-bump build (no
+  # results there).
+  - task: PublishTestResults@2
+    displayName: 'Publish test results (gcc)'
+    condition: and(succeededOrFailed(), ne(variables['skipRedundant'], 'true'))
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: '**/ctest-results.xml'
+      searchFolder: '$(Build.SourcesDirectory)'
+      mergeTestResults: true
+      testRunTitle: 'AsymCred gcc ($(buildConfiguration))'
