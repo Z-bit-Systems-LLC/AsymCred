@@ -1,6 +1,6 @@
 # AsymCred
 
-Embedded C11 library implementing open credential standards for access control readers, starting with PKOC.
+Embedded C11 library implementing open asymmetric credential standards for access control readers, starting with PKOC.
 
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later%20%7C%20Commercial-blue.svg)](LICENSE.md)
 [![Standard](https://img.shields.io/badge/C-C11%20freestanding-blue.svg)](#supported-platforms)
@@ -470,20 +470,28 @@ git-ignored. PKOC specifications are available from the
 
 ## Roadmap
 
-AsymCred is the first of a planned suite of open credential libraries for
-embedded readers. Rather than one library per vendor, one library per
-published standard, sharing the same TLV, APDU and crypto-HAL foundation.
+AsymCred is the first of a planned suite of open **asymmetric** credential
+libraries for embedded readers. Rather than one library per vendor, one
+library per published standard, sharing the same TLV, APDU and crypto-HAL
+foundation.
 
-| Standard | Cryptography | Status |
-|---|---|---|
-| **PKOC 1.1** (PSIA) | ECC P-256, public key as credential | **Implemented** — reader and card |
-| **LEAF** | AES-128 over MIFARE DESFire EV2/EV3 | Planned |
-| **Aliro** (CSA) | ECC P-256, NFC + BLE + UWB | Planned |
+| Standard | Cryptography | Trust model | Status |
+|---|---|---|---|
+| **PKOC 1.1** (PSIA) | ECC P-256 | Raw public key is the credential, registered at enrolment | **Implemented** — reader and card |
+| **LEAF Verified** (LEAF Community) | ECC P-256 | Certificate signed by the LEAF CA, provisioned at the wafer; enterprise PKI supported | Planned |
+| **Aliro** (CSA) | ECC P-256 | Certificate chain; NFC + BLE + UWB | Planned |
 
-PKOC and Aliro are public-key standards; LEAF is symmetric. What they
-share is being *open* — published specifications any manufacturer can
-implement — and needing the same embedded foundation underneath: TLV, APDU
-framing, a crypto HAL, and no assumptions about an operating system.
+All three converge on the same curve, which is why one library makes
+sense: the P-256 verification primitive behind
+[`asymcred_crypto_t`](core/include/asymcred/asymcred_crypto.h) is shared,
+as are the TLV codec and the APDU layer.
+
+Where they differ is the **trust model**, and that is the real work ahead.
+PKOC needs no PKI — the public key *is* the credential, and trust comes
+from having enrolled it. LEAF Verified and Aliro are certificate-based, so
+the reader must validate a chain to a certificate authority. That means
+extending the crypto HAL with a certificate-verification primitive rather
+than reshaping what is already there.
 
 Also under consideration for the PKOC line: the OSDP transport binding
 (`pkoc-osdp-acu`), the ECDHE-based PKOC v2 direction, and BLE transport.

@@ -23,10 +23,31 @@ credential.
 Agreed with the user on 2026-09-01. Do not silently revise them; if a task
 seems to need a change, raise it explicitly with the user first.
 
-1. **Scope is PKOC 1.1 only.** Aliro, PIV/CAK, and the OSDP crypto-auth
-   message family (`osdp_GENAUTH` / `osdp_CRAUTH` / transparent-mode
-   `osdp_XWR` / `osdp_XRD`) were considered and deliberately deferred.
-   Adding one is a scope decision for the user, not a refactor.
+1. **Scope is PKOC 1.1 only, for now.** Aliro, PIV/CAK, and the OSDP
+   crypto-auth message family (`osdp_GENAUTH` / `osdp_CRAUTH` /
+   transparent-mode `osdp_XWR` / `osdp_XRD`) were considered and
+   deliberately deferred. Adding one is a scope decision for the user,
+   not a refactor.
+
+   The repository is intended as a **suite** of open *asymmetric*
+   credential libraries — PKOC first, then LEAF Verified and Aliro. All
+   three use ECC P-256, so `asymcred_crypto_t`, the TLV codec and the
+   APDU layer are the shared foundation and should not acquire
+   PKOC-specific assumptions.
+
+   Note the trust models differ, and that is the real design work when
+   the next standard lands: PKOC needs no PKI (the raw public key *is*
+   the credential), while LEAF Verified and Aliro are certificate-based
+   and require chain validation to a CA. Expect to *extend* the crypto
+   HAL with a certificate-verification primitive rather than reshape it.
+   Do not build that speculatively before the standard is in scope.
+
+   **LEAF has two generations — do not confuse them.** LEAF Universal
+   (LEAF 4.0) is symmetric: DESFire EV2/EV3 applications on AES-128, and
+   that is what `../Cred-Bench/docs/LEAF.md` documents. **LEAF Verified**
+   is the newer asymmetric one: ECC P-256 with a certificate signed by
+   the LEAF CA at wafer provisioning, on NXP MIFARE DUOX. Only LEAF
+   Verified belongs in this repository.
 2. **Reader-side (PD) topology.** The library runs on the reader: it
    drives the card over ISO-DEP/APDU, verifies the signature locally, and
    hands the application a finished credential to report over OSDP
