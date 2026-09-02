@@ -289,7 +289,10 @@ try {
                     # Same options CI uses, so a finding fails here the
                     # way it would there rather than being printed and
                     # walked past.
-                    $env:ASAN_OPTIONS  = 'abort_on_error=1:halt_on_error=1:detect_leaks=1:print_stacktrace=1'
+                    # detect_leaks=0 matches CI; see ci/sanitize.yml for
+                    # why (LSan needs ptrace, which the LXC agents deny,
+                    # and this library allocates nothing anyway).
+                    $env:ASAN_OPTIONS  = 'abort_on_error=1:halt_on_error=1:detect_leaks=0:print_stacktrace=1'
                     $env:UBSAN_OPTIONS = 'print_stacktrace=1:halt_on_error=1'
                     try {
                         ctest --preset asan

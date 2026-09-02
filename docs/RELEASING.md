@@ -33,6 +33,15 @@ Three things worth knowing about that table:
   that, but a one-past-the-end read of a caller-owned buffer usually
   *passes silently* without a sanitizer, and no warning flag can see it.
   This job is what turns those tests into evidence.
+- **A sanitizer *crash* is not a sanitizer *finding*.** A genuine
+  detection always prints an `ERROR: AddressSanitizer: <kind>` line with
+  a stack. A burst of bare `AddressSanitizer: DEADLYSIGNAL` lines ending
+  in a SIGSEGV with no report is the runtime failing to run at all —
+  read the "Sanitizer environment" step, not the C code. The two causes
+  seen on these agents are LeakSanitizer being denied `ptrace` under
+  unprivileged LXC (hence `detect_leaks=0`) and an ASLR entropy
+  (`vm.mmap_rnd_bits`) too high for the GCC 12 ASan runtime, which is
+  fixed on the agent with `sysctl -w vm.mmap_rnd_bits=28`.
 - **The cross job is the portability claim.** The README calls the
   library embedded-friendly; `cross_arm64` is the standing evidence.
   Different alignment rules (`-Wcast-align` is far noisier on ARM) and a

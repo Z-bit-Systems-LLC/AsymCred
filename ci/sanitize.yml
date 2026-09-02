@@ -23,9 +23,27 @@
 #
 # halt_on_error=1 / abort_on_error=1 make the first finding fail the test
 # process, so ctest reports the test that tripped rather than continuing
-# past corrupted state. detect_leaks stays on (the default on Linux) —
-# the library allocates nothing, so any leak is in the test harness and
-# is worth knowing about.
+# past corrupted state.
+#
+# detect_leaks is OFF, which is not the Linux default. LeakSanitizer's
+# end-of-process scan stops the world with ptrace(PTRACE_ATTACH), and an
+# unprivileged LXC container — which is what these agents are — routinely
+# denies that. When LSan cannot attach it dies inside its own signal
+# handler, and the symptom is a burst of bare `AddressSanitizer:
+# DEADLYSIGNAL` lines and a SIGSEGV with no report at all, which reads
+# exactly like a memory bug in the code under test but is not one. That
+# is what the first run of this job produced (test_tlv, 2026-09-02).
+#
+# Turning it off costs almost nothing here: the library allocates
+# *nothing* (no malloc anywhere in core/ or pkoc/, per CLAUDE.md), so the
+# only leaks LSan could ever find are in the test harness. ASan's actual
+# value for this codebase — catching an out-of-bounds read of a
+# caller-owned buffer in the TLV/APDU decoders — is unaffected.
+#
+# A genuine ASan finding always prints an `ERROR: AddressSanitizer:
+# <kind>` line. If a bare DEADLYSIGNAL burst ever reappears, it is the
+# runtime failing to run, not a defect — check the environment step
+# above before touching the C code.
 
 steps:
   - bash: |
@@ -37,6 +55,32 @@ steps:
         echo "##vso[task.setvariable variable=skipRedundant]false"
       fi
     displayName: 'Detect redundant release-bump build'
+
+  # The two things that break a sanitizer run on this kind of agent are
+  # both environmental and both invisible in a normal log, so record them
+  # every run. It costs a second and turns "why did ASan die?" from
+  # archaeology into reading the step above the failure.
+  #
+  #   vm.mmap_rnd_bits  ASan's shadow mapping is incompatible with the
+  #                     high ASLR entropy (32) that newer kernels default
+  #                     to; the runtime then dies with DEADLYSIGNAL and no
+  #                     report. 28 or below is the known-good range for
+  #                     the GCC 12 runtime. Fixed on the agent with
+  #                     `sysctl -w vm.mmap_rnd_bits=28`, not here.
+  #   virtualisation    LeakSanitizer needs ptrace to stop the world,
+  #                     which unprivileged LXC denies — see the note on
+  #                     detect_leaks below.
+  - task: Bash@3
+    displayName: 'Sanitizer environment'
+    condition: and(succeeded(), ne(variables['skipRedundant'], 'true'))
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -uo pipefail
+        uname -a
+        cc --version | head -1
+        echo "vm.mmap_rnd_bits: $(cat /proc/sys/vm/mmap_rnd_bits 2>/dev/null || echo unavailable)"
+        echo "virtualisation:   $(systemd-detect-virt 2>/dev/null || echo unknown)"
 
   - task: Bash@3
     displayName: 'CMake configure (ASan + UBSan)'
@@ -71,7 +115,7 @@ steps:
       targetType: 'inline'
       script: |
         set -euo pipefail
-        export ASAN_OPTIONS='abort_on_error=1:halt_on_error=1:detect_leaks=1:print_stacktrace=1'
+        export ASAN_OPTIONS='abort_on_error=1:halt_on_error=1:detect_leaks=0:print_stacktrace=1'
         export UBSAN_OPTIONS='print_stacktrace=1:halt_on_error=1'
         ctest --test-dir build-asan --output-on-failure --output-junit ctest-asan-results.xml
 
